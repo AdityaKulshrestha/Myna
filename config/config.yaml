@@ -1,0 +1,38 @@
+defaults:
+  - model: whisper  # Default model, can be overridden
+
+dataset:
+  name: himanshu23099/singe_speaker_hindi_audio
+  audio_col: audio
+  text_col: transcription
+  train_split: 0.8
+
+models:
+  whisper:
+    config: whisper_config.yaml
+
+audio_preprocessing:
+  sample_rate: 16000
+  n_fft: 25
+  hop_length: 10 
+  n_mels: 80
+  transformation_type: torchaudio
+  transform: None
+  max_len: 20000
+
+
+text_preprocessing:
+  tokenizer: sarvamai/sarvam-1
+  max_padding: 64
+  truncation: True
+  pad_token_id: 68096
+
+training:
+  epochs: 3
+  batch: 4          # The training fails for larger epochs
+  strategy: ddp
+
+model:
+  name: whisper  # Change to "conformer" if needed
+  version: base  # Specify model details
+  config: ${models.${model.name}.config}
