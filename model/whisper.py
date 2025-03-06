@@ -198,7 +198,9 @@ class WhisperEncoder(nn.Module):
         super(WhisperEncoder, self).__init__()
         assert embed_dim % num_heads == 0, f"embed_dim ({embed_dim}) must be divisible by num_heads ({num_heads})"
 
-        self.linear = nn.Linear(input_dim, embed_dim)
+        self.conv1 = nn.Conv1d(input_dim, embed_dim, kernel_size=3, padding=1)
+        self.gelu = nn.GELU()
+        self.conv2 = nn.Conv1d(embed_dim, embed_dim, kernel_size=3, stride=2, padding=1)
 
         self.pos_emb = SinusoidalPositionalEmbedding(embed_dim, max_len)
 
@@ -218,6 +220,11 @@ class WhisperEncoder(nn.Module):
         Args:
             x: Mel spectogram [batch, features, time]
         """
+        x = self.conv1(x)
+        x = F.gelu(x)
+        x = self.conv2(x)
+        x = F.gelu(x)
+
         # Transpose: [batch, features, time] -> [batch, time, features]
         x = x.transpose(1, 2)                       # [B, T, F]
 
@@ -226,7 +233,7 @@ class WhisperEncoder(nn.Module):
         padding_mask = (x.abs().sum(dim=-1) == 0)
 
         # Linear projection
-        x = self.linear(x)
+        # x = self.linear(x)
 
         # Transpose for transformer: [batch, time, dim] -> [time, batch, dim]
         x = x.transpose(0, 1)                                           # [T, B, D]

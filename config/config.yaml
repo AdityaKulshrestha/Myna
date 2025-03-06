@@ -30,7 +30,7 @@ text_preprocessing:
 training:
   epochs: 3
   batch: 4          # The training fails for larger epochs
-  strategy: ddp
+  strategy: None    # ddp 
 
 model:
   name: whisper  # Change to "conformer" if needed
