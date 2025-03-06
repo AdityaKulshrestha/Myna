@@ -15,9 +15,9 @@ To change any parameter from the hydra config:
 
 
 ## Progress
-[x] Writter the skeleton of the framework
-[x] Dataloader using huggingface dataset and Torchaudio transformation
-[x] Training script skeleton
-[x] Integration of Hydra for easy configuration
-[ ] Readme 
-[ ] Packaged the framework
+- [x] Writter the skeleton of the framework
+- [x] Dataloader using huggingface dataset and Torchaudio transformation
+- [x] Training script skeleton
+- [x] Integration of Hydra for easy configuration
+- [ ] Readme 
+- [ ] Packaged the framework
