@@ -1,0 +1,6 @@
+__pycache__
+lightning_logs
+outputs
+sample_dataset
+.graph_dumps
+.ipynb_checkpoints

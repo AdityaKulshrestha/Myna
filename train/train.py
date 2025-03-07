@@ -43,12 +43,14 @@ def main(cfg: DictConfig):
         trainer = pl.Trainer(
             accelerator="hpu",
             devices=2,
+            max_epochs=cfg.training.epochs,
             strategy=HPUDDPStrategy(parallel_devices=[torch.device('hpu')]*2, find_unused_parameters=True)     # When you pass device=2 -> It automatically selects HPUDDPStrategy
         )
     else:
         trainer = pl.Trainer(
             accelerator="hpu",
             devices=1,
+            max_epochs=cfg.training.epochs
         )
 
     # Train model

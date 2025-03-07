@@ -8,8 +8,7 @@ whisper:
       max_len: 20000            # Same as the max frames in the audio_preprocessing
 
     decoder_block:
-      vocab_size: 68096         # Depends on the tokenizer module, add validation on this
-      embed_dim: 512
+      vocab_size: 68097         # Depends on the tokenizer module, add validation on this (+1 for the padding)
       num_layers: 4
       num_heads: 4
       max_len: 1000
@@ -19,6 +18,6 @@ whisper:
   hyper_params:
     learning_rate: 3e-4
     weigth_decay: 0.01
-    max_steps: 100000
+    max_steps: 1000
     b1: 0.9
     b2: 0.98

@@ -31,6 +31,7 @@ training:
   epochs: 3
   batch: 4          # The training fails for larger epochs
   strategy: None    # ddp 
+  use_deepspeed: Yes
 
 model:
   name: whisper  # Change to "conformer" if needed

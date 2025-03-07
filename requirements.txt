@@ -2,3 +2,4 @@ hydra-core
 librosa
 soundfile
 numpy==1.23.5
+pytorch-lightning

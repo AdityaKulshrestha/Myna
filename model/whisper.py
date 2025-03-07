@@ -89,7 +89,6 @@ class MultiHeadAttention(nn.Module):
                 mask = mask.unsqueeze(1)
 
             scores = scores.masked_fill(mask == 1, -1e9)                # Applies -1e9 where the value is 0 (for encoder -> Padding)
-
         attention_weights = F.softmax(scores, dim=-1)
 
         # Apply attention weights to values
@@ -230,7 +229,7 @@ class WhisperEncoder(nn.Module):
 
         # Generate padding mask based on zero values in the spectrogram
         # We assume that padded regions in mel spectrogram are zeros
-        padding_mask = (x.abs().sum(dim=-1) == 0)
+        # padding_mask = (x.abs().sum(dim=-1) == 0)
 
         # Linear projection
         # x = self.linear(x)
@@ -243,12 +242,14 @@ class WhisperEncoder(nn.Module):
 
         # Apply transformer with padding mask
         x = x.transpose(0, 1)
-        x = self.transformer(x, mask=padding_mask)      # [T, B, D]
+        x = self.transformer(x)      # [T, B, D]
 
         # # Transpose back: [time, batch, dim] -> [batch, time, dim]
-        # x = x.transpose(0, 1)                                            # [T, B, D]
+        # x = x.transpose(0, 1)  
+        # 
+        # print("This is padding_mask:", padding_mask[0])                                          # [T, B, D]
 
-        return x, padding_mask
+        return x
     
 
 class WhisperDecoder(nn.Module):
@@ -256,6 +257,7 @@ class WhisperDecoder(nn.Module):
         super(WhisperDecoder, self).__init__()
         # Save padding token ID for mask generation
         self.pad_token_id = pad_token_id 
+        self.max_len = max_len
 
         # Token embedding 
         self.token_embedding = nn.Embedding(vocab_size, embed_dim)
@@ -276,7 +278,7 @@ class WhisperDecoder(nn.Module):
         # Final projection to vocab
         self.fc = nn.Linear(embed_dim, vocab_size)
 
-    def forward(self, tokens, memory, memory_padding_mask=None):
+    def forward(self, tokens, memory, tgt_mask=None):
         """
         Args:
             tokens: Token indices [batch, seq_len]
@@ -284,7 +286,8 @@ class WhisperDecoder(nn.Module):
             memory_padding_mask: Padding mask for memory [batch, source_len]
         """
         # Generate padding mask for tokens based on pad_token_id
-        tokens_padding_mask = tokens == self.pad_token_id                              # [B, S]
+        # tokens_padding_mask = tokens == self.pad_token_id                              # [B, S]
+                
         # Embed tokens
         x = self.token_embedding(tokens)                                                    # [B, S, D]
 
@@ -296,21 +299,21 @@ class WhisperDecoder(nn.Module):
         x = x.transpose(0, 1)                                                               # [B, S, D]
 
         # Create causal mask for autoregressive decoding
-        tgt_len = tokens.size(1)
-       # [B, S, S] Generates a mask of causal masking with end values as -inf
-        tgt_mask = torch.triu(torch.ones(tgt_len, tgt_len, device=x.device), diagonal=1).bool().unsqueeze(0)            # Because we are already doing this in the attention block -> False -> 1e-9
-
+        tgt_len = tokens.size(1)   
+        # [B, S, S] Generates a mask of causal masking with end values as -inf
+        if tgt_mask ==  None:
+            tgt_mask = torch.triu(torch.ones(tgt_len, tgt_len, device=x.device), diagonal=1).bool().unsqueeze(0)            # Because we are already doing this in the attention block -> False -> 1e-9
         # Apply transformer decoder
         x = self.transformer(                                                               # [S, B, D]
             x, memory,
             tgt_mask=tgt_mask,
-            src_mask=memory_padding_mask,
+            # src_mask=memory_padding_mask,
         )                                                         # [B, S, D]
 
         # Projects to vocabulary
         logits = self.fc(x)                                                                  # [B, S, V]
 
-        return logits, tokens_padding_mask       
+        return logits, tgt_mask       
     
 
 class Whisper(nn.Module):
@@ -364,16 +367,14 @@ class Whisper(nn.Module):
             padding_masks: Dictionary of padding masks
         """
         # Encoder forward pass - generate padding mask from mel spectrogram
-        encoder_out, mel_padding_mask = self.encoder(mel)                       # [B, T, D], [B, T]
+        encoder_out = self.encoder(mel)                       # [B, T, D], [B, T]
         # Decoder forward pass - generates padding mask from tokens
         logits, tokens_padding_mask = self.decoder(                             # [B, S, V], [B, S]
             tokens,
             encoder_out,
-            mel_padding_mask
         )
 
         return logits, {
-            "mel_padding_mask": mel_padding_mask,
             "tokens_padding_mask": tokens_padding_mask
         }
     
@@ -405,9 +406,8 @@ class Whisper(nn.Module):
         """
         batch_size = mel.size(0)
         device = mel.device 
-
         # Encode the mel spectrogram
-        encoder_output, _ = self.encoder(mel)                               # [B, T, D], [B, T]
+        encoder_output = self.encoder(mel)                               # [B, T, D], [B, T]
 
         # Initialize with BOS Token
         input_ids = torch.full(
@@ -417,46 +417,69 @@ class Whisper(nn.Module):
             device=device
         )
 
+        ## Left padding needs to be done during the inference
+        input_ids = torch.nn.functional.pad(
+            input_ids, (max_len-1, 0), value=68096
+        )
+
+
         # Generate until max_length or all sequences have EOS
-        for _ in range(max_len - 1):
+        for idx in range(max_len - 1):
             # Get logits for next token
-            logits, _ = self.decoder(input_ids, encoder_output)                 # [B, S, V]
-            next_token_logits = logits[: -1, :]                                 # [B, V]
+
+            ########### LEFT PADDING HENCE LEFT MASKING - STILL NOT WORKING ######################################
+            mask = torch.zeros(max_len, device=device, dtype=torch.bool).unsqueeze(0)  # Start with all True (masked)
+            # mask[:, :idx + 1] = False  # Unmask values at and before the given idx
+            mask[:, -1] = True
+            ##########################################################################################
+            
+            logits, _ = self.decoder(input_ids, encoder_output, mask)                 # [B, S, V]
+            ###################### STILL PREDICTING THE PADDING TOKEN ##################
+            # probs = F.softmax(logits, dim=-1)
+            # print(probs.squeeze(0).shape)
+            # tokens = torch.argmax(probs.squeeze(0), dim=-1, keepdim=True)
+            # print(tokens.shape)
+            # print(tokens)
+            ########################################################################
+            next_token_logits = logits[:, idx+1, :]                      # [B, V]
 
             # Apply temperature
-            if temperature != 1.0:
-                next_token_logits = next_token_logits / temperature
+            # if temperature != 1.0:
+            #     next_token_logits = next_token_logits / temperature
 
-            # Apply top-k sampling
-            if top_k > 0:
-                indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
-                next_token_logits[indices_to_remove] = -float('Inf')
+            # # Apply top-k sampling
+            # if top_k:
+            #     indices_to_remove = next_token_logits < torch.topk(next_token_logits, top_k)[0][..., -1, None]
+            #     next_token_logits[indices_to_remove] = -float('Inf')
 
-            # Apply top-k (nucleus) sampling
-            if top_p > 0.0:
-                sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
-                cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+            # # Apply top-k (nucleus) sampling
+            # if top_p:
+            #     sorted_logits, sorted_indices = torch.sort(next_token_logits, descending=True)
+            #     cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
 
-                # Remove tokens with cumulative probability above the threshhold
-                sorted_indices_to_remove = cumulative_probs > top_p
-                # Shift the indices to the right to keep the first token above the threshold        
-                sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
-                sorted_indices_to_remove[..., 0] = 0
+            #     # Remove tokens with cumulative probability above the threshhold
+            #     sorted_indices_to_remove = cumulative_probs > top_p
+            #     # Shift the indices to the right to keep the first token above the threshold        
+            #     sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+            #     sorted_indices_to_remove[..., 0] = 0
 
-                # Scatter sorted indices to original indexing
-                indices_to_remove = sorted_indices_to_remove.scatter(
-                    dim=1,
-                    index=sorted_indices,
-                )
-                next_token_logits[indices_to_remove] = float('Inf')
+            #     # Scatter sorted indices to original indexing
+            #     indices_to_remove = sorted_indices_to_remove.scatter(
+            #         dim=1,
+            #         index=sorted_indices,
+            #     )
+            #     next_token_logits[indices_to_remove] = float('Inf')
 
             # Samplie next token
             probs = F.softmax(next_token_logits, dim=-1)
-            next_token = torch.multinomial(probs, num_samples=1)                            # [B, 1]
 
+            # next_token = torch.multinomial(probs, num_samples=1)
+            next_token =  torch.argmax(probs, dim=-1, keepdim=True)                            # [B, 1]
+            # print("This is the next token", next_token)
             # Concatenate new token with previous tokens
-            input_ids = torch.cat([input_ids, next_token], dim=-1)                          # [B, S+1]
-
+            # input_ids = torch.cat([input_ids, next_token], dim=-1)  
+            #                         # [B, S+1]
+            input_ids[0, idx+1] = next_token
             # Check if all sequences have EOS
             eos_mask = (next_token.squeeze(-1) == eos_token_id)
             if eos_mask.all():

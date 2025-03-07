@@ -95,9 +95,6 @@ class AudioDataset(Dataset):
             max_length=self.max_padding,
             return_tensors='pt'
         )['input_ids'][0]
-
-        tokenized_transcription = torch.cat([tokenized_transcription, torch.tensor([self.text_tokenizer.eos_token_id])])
-
         sample = {
             "audio": mel_spec_db,
             "label": tokenized_transcription

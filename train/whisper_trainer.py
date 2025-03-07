@@ -56,8 +56,8 @@ class WhisperTrainer(pl.LightningModule):
         lprobs = F.log_softmax(logits, dim=-1)
 
         ################### CHECKING THE PREDICTION ####################
-        # print(torch.argmax(lprobs, dim=-1)[0])
-        # print(labels[0])
+        print(torch.argmax(lprobs, dim=-1)[0])
+        print(labels[0])
         #################################################################
 
         lprobs = lprobs.view(-1, self.vocab_size)
