@@ -26,5 +26,6 @@ To change any parameter from the hydra config:
 - [x] Training script skeleton
 - [x] Integration of Hydra for easy configuration
 - [x] Added DDP support
+- [x] Added inference script
 - [ ] Readme 
 - [ ] Packaged the framework
